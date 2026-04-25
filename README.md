@@ -71,19 +71,21 @@ Built with **Python**, **PySide6**, **Leaflet**, and a modular STAC client desig
 PROJECT_ROOT/
 │
 ├── app.py
+├── LICENSE
+├── requirements.txt
 ├── README.md
 │
 └── geonuxlabs_stacfetcher/
-    ├── main_window.py
-    ├── downloader.py
-    ├── map_dialog.py
-    ├── stac_client.py
     ├── constants.py
-    ├── utils.py
+    ├── login_dialog.py
+    ├── main_window.py
+    ├── map_bridge.py
+    ├── map_dialog.py
+    ├── map_view.py
     │
     ├── resources/
     │   ├── splash.txt
-    │   └── icons/
+    │   
     │
     └── __init__.py
 ```
