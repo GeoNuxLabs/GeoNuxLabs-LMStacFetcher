@@ -14,7 +14,18 @@
 </pre>
 
 # GeoNuxLabs LM-STAC Downloader  
-*An interactive desktop tool for exploring and downloading geospatial datasets from Lantmäteriet’s STAC API*
+*An interactive desktop tool for exploring and downloading geospatial datasets from Lantmäteriet’s STAC API* 
+
+NOTE!: This software interacts with external geospatial data services, including but  
+not limited to Lantmäteriet’s STAC APIs. The user is solely responsible for  
+ensuring that all data access, downloads, storage, and usage comply with the  
+terms, conditions, rate limits, licensing agreements, and legal requirements  
+set by the respective data providers.
+
+The authors and copyright holders of this software assume no responsibility  
+for excessive data usage, violations of third‑party terms, service abuse,  
+associated costs, or any legal consequences resulting from how the user  
+chooses to operate this software.
 
 ---
 
@@ -48,8 +59,7 @@ Built with **Python**, **PySide6**, **Leaflet**, and a modular STAC client desig
 - Real‑time status updates  
 
 ### ✔ Tile Preview  
-- List all matching STAC items before downloading  
-- View metadata such as date, type, and size  
+- List all matching STAC items before downloading 
 - Avoid unnecessary downloads  
 
 ### ✔ Robust Download Engine  
@@ -60,9 +70,7 @@ Built with **Python**, **PySide6**, **Leaflet**, and a modular STAC client desig
 
 ### ✔ Clean and User-Friendly UI  
 - Modern PySide6 interface  
-- Clear status messages  
-- Dark theme suitable for GIS workflows  
-- Optional ASCII splash footer  
+- Clear status messages   
 
 ---
 
@@ -97,14 +105,14 @@ PROJECT_ROOT/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/geonuxlabs-stac-downloader.git
-cd geonuxlabs-stac-downloader
+git clone https://github.com/yourusername/GeoNuxLabs-LMStacFetcher.git
+cd GeoNuxLabs-LMStacFetcher-downloader
 ```
 
 ### 2. Create a conda environment (recommended)
 
 ```bash
-conda create -n stacfetcher python=3.11
+conda create -n stacfetcher python=3.12
 conda activate stacfetcher
 ```
 
@@ -171,20 +179,8 @@ The application uses a structured pipeline to ensure reliable STAC downloads:
   - Logging  
 - **File handling**  
   - Automatic naming  
-  - Directory creation  
-  - Skips already downloaded files  
+  - Directory creation    
 
----
-
-## Testing
-
-You can test the application with any Lantmäteriet STAC endpoint, such as:
-
-```
-/stac-orto/v1/search
-/stac-dtm/v1/search
-/stac-hm/v1/search
-```
 
 ---
 
