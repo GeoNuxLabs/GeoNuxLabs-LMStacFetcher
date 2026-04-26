@@ -18,7 +18,7 @@
 
 ---
 
-## ⚠ Important Notice
+## Important Notice
 
 This software interacts with external geospatial data services, including but  
 not limited to **Lantmäteriet’s STAC APIs**. The user is solely responsible for  
@@ -35,7 +35,7 @@ chooses to operate this software.
 
 ## Security
 
-This version of the STAC Downloader includes **important security improvements** to protect user credentials:
+GeoNuxLabs STAC Downloader includes **important security features** to protect user credentials:
 
 ### ✔ HTTPS Enforcement  
 The application now **requires all STAC URLs to use HTTPS**.  
@@ -173,7 +173,7 @@ From the project root:
 python app.py
 ```
 
-The GUI will launch immediately.
+The GUI and login-window will launch immediately.
 
 ---
 
