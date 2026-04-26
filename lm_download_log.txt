@@ -1,0 +1,7 @@
+------------------------------------------------------------
+Timestamp: 2026-04-26T09:49:57.753223Z
+STAC URL: https://api.lantmateriet.se/stac-hojd/v1/search
+BBOX: [13.887697279246673, 57.94735055059515, 13.921670753274038, 57.95991151199899]
+Download folder: /home/geonux/lantmateriet_downloads
+Total tiles: 2
+Success: 2, Failures: 0

@@ -1,7 +1,8 @@
 import os
 import sys
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
+from urllib.parse import urlparse
 
 import requests
 from requests.auth import HTTPBasicAuth
@@ -9,45 +10,74 @@ from requests.auth import HTTPBasicAuth
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QProgressBar,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
-    QProgressBar,
-    QApplication,
-    QDialog,
 )
 
-from geonuxlabs_stacfetcher.constants import DEFAULT_DOWNLOAD_DIR, MAX_TILES, LOG_FILE
-from geonuxlabs_stacfetcher.login_dialog import LoginDialog
+from geonuxlabs_stacfetcher.constants import (
+    DEFAULT_DOWNLOAD_DIR,
+    MAX_TILES,
+    LOG_FILE,
+)
 from geonuxlabs_stacfetcher.map_dialog import MapDialog
-
+from geonuxlabs_stacfetcher.login_dialog import LoginDialog
 
 class MainWindow(QMainWindow):
-    """Main GUI window for the Lantmäteriet STAC downloader."""
+    """
+    Main GUI window for the Lantmäteriet STAC downloader.
 
-    def __init__(self):
+    This class handles:
+    - Login and in-memory storage of credentials.
+    - BBOX selection via a map dialog.
+    - STAC search and preview of tiles.
+    - Download of selected tiles with HTTP Basic Auth.
+    - Logging of download sessions (without credentials).
+    """
+
+    # Allowed STAC hostnames for security checks.
+    # This prevents credentials from being sent to arbitrary domains.
+    ALLOWED_STAC_HOSTS = {
+        "api.lantmateriet.se",
+    }
+
+    def __init__(self) -> None:
         super().__init__()
 
-        self.setWindowTitle("GeoNuxLabs - LM STAC Downloader")
+        self.setWindowTitle("GeoNuxLabs - STAC Downloader (Lantmäteriet)")
         self.setMinimumSize(1400, 900)
         self.resize(1600, 1000)
 
+        # Credentials are kept only in memory and never written to disk.
         self.email: Optional[str] = None
         self.password: Optional[str] = None
+
+        # Current BBOX (set via map dialog)
         self.bbox: Optional[list] = None
+
+        # Download directory for tiles
         self.download_dir: str = DEFAULT_DOWNLOAD_DIR
+
+        # Cached STAC items from the last preview
         self.last_preview_items: Optional[List[Dict]] = None
 
+        # Prompt user for credentials and ensure download directory exists
         self._login()
         self._ensure_download_dir()
 
+        # Build the main UI layout
         central = QWidget()
         main_layout = QVBoxLayout(central)
         main_layout.setSpacing(0)
@@ -55,7 +85,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         # ------------------------------------------------------------------
-        # Top bar
+        # Top bar with URL, folder selection, map, preview, and download
         # ------------------------------------------------------------------
         top_bar = QHBoxLayout()
         top_bar.setSpacing(10)
@@ -63,29 +93,35 @@ class MainWindow(QMainWindow):
 
         button_style = "font-size: 18px; padding: 8px 16px;"
 
+        # STAC search URL input
         self.api_edit = QLineEdit()
         self.api_edit.setPlaceholderText(
-            "Paste Lantmäteriet STAC search URL (e.g. /stac-*/v1/search)"
+            "Paste Lantmäteriet STAC search URL "
+            "(e.g. https://api.lantmateriet.se/stac-hojd/v1/search)"
         )
         self.api_edit.setStyleSheet("font-size: 16px;")
         top_bar.addWidget(self.api_edit, stretch=1)
 
+        # Folder selection button
         self.btn_folder = QPushButton("Select folder")
         self.btn_folder.setStyleSheet(button_style)
         self.btn_folder.clicked.connect(self.choose_download_dir)
         top_bar.addWidget(self.btn_folder)
 
+        # Open map dialog for BBOX selection
         self.btn_open_map = QPushButton("Open map (draw BBOX)")
         self.btn_open_map.setStyleSheet(button_style)
         self.btn_open_map.clicked.connect(self.open_map_dialog)
         top_bar.addWidget(self.btn_open_map)
 
+        # Preview button (enabled after BBOX is set)
         self.btn_preview = QPushButton("Preview")
         self.btn_preview.setStyleSheet(button_style)
         self.btn_preview.clicked.connect(self.preview_download)
         self.btn_preview.setEnabled(False)
         top_bar.addWidget(self.btn_preview)
 
+        # Download button (enabled after preview)
         self.btn_download = QPushButton("Start download")
         self.btn_download.setStyleSheet(button_style)
         self.btn_download.clicked.connect(self.start_download)
@@ -95,7 +131,7 @@ class MainWindow(QMainWindow):
         top_bar.addStretch()
 
         # ------------------------------------------------------------------
-        # Progress bar (always visible)
+        # Progress bar (always visible, but value updated during download)
         # ------------------------------------------------------------------
         self.progress_container = QWidget()
         pc_layout = QVBoxLayout(self.progress_container)
@@ -106,17 +142,14 @@ class MainWindow(QMainWindow):
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
         self.progress.setTextVisible(False)
-
         pc_layout.addWidget(self.progress)
 
-        # Always visible
+        # Always visible, but may show 0% when idle
         self.progress_container.setVisible(True)
-
         main_layout.addWidget(self.progress_container)
 
-
         # ------------------------------------------------------------------
-        # Tight text block (status + info + folder)
+        # Status + info + folder labels
         # ------------------------------------------------------------------
         self.text_block_widget = QWidget()
         text_block_layout = QVBoxLayout(self.text_block_widget)
@@ -130,17 +163,28 @@ class MainWindow(QMainWindow):
             }
         """
 
-        self.status_label = QLabel("No BBOX selected. Open the map to draw one.")
-        self.status_label.setStyleSheet(tight_style + "font-size: 16px; color: white;")
+        # Status label for user feedback
+        self.status_label = QLabel(
+            "No BBOX selected. Open the map to draw one."
+        )
+        self.status_label.setStyleSheet(
+            tight_style + "font-size: 16px; color: white;"
+        )
 
+        # Info label with usage note
         self.info_label = QLabel(
             "NOTE: Downloading data may have implications according to your "
             "agreement with Lantmäteriet. Avoid unnecessary large downloads."
         )
-        self.info_label.setStyleSheet(tight_style + "font-size: 13px; color: orange;")
+        self.info_label.setStyleSheet(
+            tight_style + "font-size: 15px; color: orange;"
+        )
 
+        # Label showing the current download folder
         self.folder_label = QLabel(self.download_dir)
-        self.folder_label.setStyleSheet(tight_style + "font-size: 12px; color: #aaaaaa;")
+        self.folder_label.setStyleSheet(
+            tight_style + "font-size: 12px; color: #aaaaaa;"
+        )
 
         text_block_layout.addWidget(self.status_label)
         text_block_layout.addWidget(self.info_label)
@@ -149,7 +193,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.text_block_widget)
 
         # ------------------------------------------------------------------
-        # Splash (ASCII)
+        # Splash (ASCII art)
         # ------------------------------------------------------------------
         self.splash_widget = QWidget()
         splash_layout = QHBoxLayout(self.splash_widget)
@@ -158,6 +202,7 @@ class MainWindow(QMainWindow):
 
         splash_layout.addStretch()
 
+        # Load splash text from file if available
         try:
             with open(
                 "geonuxlabs_stacfetcher/resources/splash.txt",
@@ -169,7 +214,9 @@ class MainWindow(QMainWindow):
             splash_text = "Splash file missing"
 
         self.splash_label = QLabel(splash_text)
-        self.splash_label.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
+        self.splash_label.setFont(
+            QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        )
         self.splash_label.setStyleSheet("font-size: 14px; color: cyan;")
         self.splash_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.splash_label.setWordWrap(False)
@@ -177,18 +224,18 @@ class MainWindow(QMainWindow):
         splash_layout.addWidget(self.splash_label)
         main_layout.addWidget(self.splash_widget)
 
-        # ------------------------------------------------------------------
-        # Viewer container (MÅSTE ligga sist)
-        # ------------------------------------------------------------------
-        self.viewer_container = QVBoxLayout()
-        main_layout.addLayout(self.viewer_container)
-
-
     # ------------------------------------------------------------------
     # Login and setup
     # ------------------------------------------------------------------
     def _login(self) -> None:
-        """Prompt user for credentials; keep only in memory."""
+        """
+        Prompt user for credentials; keep only in memory.
+
+        This method:
+        - Shows a modal login dialog.
+        - Exits the application if no credentials are provided.
+        - Stores email and password in instance attributes (RAM only).
+        """
         dialog = LoginDialog(self)
         if dialog.exec() != QDialog.Accepted:
             QMessageBox.warning(self, "Aborted", "No login provided.")
@@ -203,23 +250,41 @@ class MainWindow(QMainWindow):
             )
             sys.exit(0)
 
+        # Credentials are stored only in memory for use with HTTPBasicAuth.
         self.email = email
         self.password = password
 
     def _ensure_download_dir(self) -> None:
-        """Ensure that the download directory exists."""
+        """
+        Ensure that the download directory exists.
+
+        If the directory does not exist, it is created. This avoids
+        runtime errors when writing downloaded files.
+        """
         os.makedirs(self.download_dir, exist_ok=True)
 
     # ------------------------------------------------------------------
     # Map / BBOX handling
     # ------------------------------------------------------------------
     def open_map_dialog(self) -> None:
-        """Open the Leaflet map dialog for BBOX selection."""
+        """
+        Open the Leaflet map dialog for BBOX selection.
+
+        The MapDialog is expected to call `set_bbox` with the selected
+        bounding box when the user finishes drawing.
+        """
         dialog = MapDialog(self.set_bbox, self)
         dialog.exec()
 
     def set_bbox(self, bbox: list) -> None:
-        """Store BBOX and enable preview."""
+        """
+        Store BBOX and enable preview.
+
+        Parameters
+        ----------
+        bbox : list
+            The bounding box selected by the user in the map dialog.
+        """
         self.bbox = bbox
         self.status_label.setText(
             "BBOX selected. Click 'Preview' to inspect tiles."
@@ -232,7 +297,11 @@ class MainWindow(QMainWindow):
     # Folder selection
     # ------------------------------------------------------------------
     def choose_download_dir(self) -> None:
-        """Let the user choose a download directory."""
+        """
+        Let the user choose a download directory.
+
+        The selected directory is stored and displayed in the UI.
+        """
         directory = QFileDialog.getExistingDirectory(
             self,
             "Select download folder",
@@ -245,8 +314,63 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # STAC search and preview
     # ------------------------------------------------------------------
+    def _validate_stac_url(self, url: str) -> bool:
+        """
+        Validate the STAC URL for security before use.
+
+        This method enforces:
+        - HTTPS scheme (no plain HTTP).
+        - Hostname must be in the allowed list.
+
+        Returns
+        -------
+        bool
+            True if the URL is considered safe to use, False otherwise.
+        """
+        parsed = urlparse(url)
+
+        # Require HTTPS to protect credentials in transit.
+        if parsed.scheme.lower() != "https":
+            QMessageBox.warning(
+                self,
+                "Insecure URL",
+                (
+                    "The STAC URL must use HTTPS to protect your "
+                    "credentials.\n\n"
+                    f"Current URL: {url}"
+                ),
+            )
+            return False
+
+        # Require the hostname to be in the allowed list.
+        hostname = parsed.hostname or ""
+        if hostname.lower() not in self.ALLOWED_STAC_HOSTS:
+            QMessageBox.warning(
+                self,
+                "Untrusted STAC host",
+                (
+                    "The STAC URL does not point to a trusted host.\n\n"
+                    f"Current host: {hostname}\n\n"
+                    "To protect your Lantmäteriet credentials, this "
+                    "tool only allows known hosts such as:\n"
+                    "- https://api.lantmateriet.se"
+                ),
+            )
+            return False
+
+        return True
+
     def _stac_search(self) -> Optional[List[Dict]]:
-        """Run a STAC search for the current BBOX."""
+        """
+        Run a STAC search for the current BBOX.
+
+        This method:
+        - Validates that a BBOX is set.
+        - Validates the STAC URL for HTTPS and allowed host.
+        - Sends a POST request with a simple JSON payload containing
+          the BBOX and a limit on the number of items.
+        - Returns the list of STAC items (features) or None on error.
+        """
         if not self.bbox:
             QMessageBox.warning(
                 self,
@@ -264,16 +388,26 @@ class MainWindow(QMainWindow):
             )
             return None
 
+        # Security check: ensure HTTPS and trusted host before sending
+        # credentials or any request.
+        if not self._validate_stac_url(search_url):
+            return None
+
+        # Payload for STAC search: BBOX and a limit on number of items.
         payload = {
             "bbox": self.bbox,
-            "limit": 10000,
+            "limit": 100,
         }
 
         self.status_label.setText("Searching STAC...")
         QApplication.processEvents()
 
         try:
-            response = requests.post(search_url, json=payload, timeout=60)
+            response = requests.post(
+                search_url,
+                json=payload,
+                timeout=60,
+            )
         except Exception as exc:
             QMessageBox.critical(
                 self,
@@ -295,7 +429,15 @@ class MainWindow(QMainWindow):
         return items
 
     def preview_download(self) -> None:
-        """Preview number of tiles and enforce limits."""
+        """
+        Preview number of tiles and enforce limits.
+
+        This method:
+        - Runs a STAC search for the current BBOX.
+        - Checks the number of returned tiles.
+        - Enforces a maximum tile limit to avoid mass downloads.
+        - Enables the download button if the user confirms.
+        """
         items = self._stac_search()
         if items is None:
             return
@@ -336,6 +478,7 @@ class MainWindow(QMainWindow):
         )
         self.btn_download.setEnabled(True)
 
+        # Ask the user if they want to proceed after seeing the count.
         msg = QMessageBox(self)
         msg.setIcon(QMessageBox.Information)
         msg.setWindowTitle("Preview")
@@ -362,7 +505,17 @@ class MainWindow(QMainWindow):
     # Download
     # ------------------------------------------------------------------
     def start_download(self) -> None:
-        """Download tiles after explicit user confirmation."""
+        """
+        Download tiles after explicit user confirmation.
+
+        This method:
+        - Requires a successful preview (cached items).
+        - Confirms the total number of tiles with the user.
+        - Uses HTTP Basic Auth with the stored credentials.
+        - Iterates over STAC items and downloads the preferred asset.
+        - Updates a progress bar and status label.
+        - Logs the session (without credentials).
+        """
         if not self.last_preview_items:
             QMessageBox.warning(
                 self,
@@ -387,7 +540,10 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Download cancelled by user.")
             return
 
+        # HTTP Basic Auth using in-memory credentials.
         auth = HTTPBasicAuth(self.email, self.password)
+
+        # Preferred asset keys, in order of priority.
         preferred_asset_keys = [
             "data",
             "elevation",
@@ -416,12 +572,14 @@ class MainWindow(QMainWindow):
                 failures += 1
                 continue
 
+            # Select the first matching preferred asset key.
             asset = None
             for key in preferred_asset_keys:
                 if key in assets:
                     asset = assets[key]
                     break
 
+            # Fallback: use the first asset if no preferred key is found.
             if asset is None:
                 asset = list(assets.values())[0]
 
@@ -465,14 +623,17 @@ class MainWindow(QMainWindow):
                 downloaded += 1
             except Exception:
                 failures += 1
-        
+
+        # Reset progress bar after completion.
         self.progress.setValue(0)
         self.progress.setFormat("")
 
+        # Log the download session (without credentials).
         self._log_download(items, downloaded, failures)
 
         self.status_label.setText(
-            f"Download finished. Success: {downloaded}, failures: {failures}."
+            f"Download finished. Success: {downloaded}, "
+            f"failures: {failures}."
         )
         QMessageBox.information(
             self,
@@ -485,6 +646,7 @@ class MainWindow(QMainWindow):
             ),
         )
 
+        # Disable download button until a new preview is run.
         self.btn_download.setEnabled(False)
 
     def _log_download(
@@ -493,7 +655,18 @@ class MainWindow(QMainWindow):
         downloaded: int,
         failures: int,
     ) -> None:
-        """Append a simple log entry for this download session."""
+        """
+        Append a simple log entry for this download session.
+
+        The log contains:
+        - Timestamp (UTC)
+        - STAC URL (without credentials)
+        - BBOX
+        - Download folder
+        - Total tiles, successes, and failures
+
+        Credentials are never written to the log.
+        """
         try:
             with open(LOG_FILE, "a", encoding="utf-8") as log_file:
                 log_file.write(
@@ -514,4 +687,7 @@ class MainWindow(QMainWindow):
                     f"Success: {downloaded}, Failures: {failures}\n"
                 )
         except Exception as exc:
+            # Logging failures are printed to stdout/stderr but do not
+            # interrupt the main workflow.
             print("Could not write log:", exc)
+

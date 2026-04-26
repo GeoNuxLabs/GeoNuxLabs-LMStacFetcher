@@ -13,44 +13,84 @@
                             An initiative by Loa Andersson, Sweden 2025
 </pre>
 
-# GeoNuxLabs LM-STAC Downloader  
-*An interactive desktop tool for exploring and downloading geospatial datasets from Lantmäteriet’s STAC API* 
+# GeoNuxLabs STAC Downloader (Lantmäteriet)  
+*An interactive desktop tool for exploring and downloading geospatial datasets from Lantmäteriet’s STAC API.*
 
-NOTE!: This software interacts with external geospatial data services, including but  
-not limited to Lantmäteriet’s STAC APIs. The user is solely responsible for  
+---
+
+## ⚠ Important Notice
+
+This software interacts with external geospatial data services, including but  
+not limited to **Lantmäteriet’s STAC APIs**. The user is solely responsible for  
 ensuring that all data access, downloads, storage, and usage comply with the  
 terms, conditions, rate limits, licensing agreements, and legal requirements  
 set by the respective data providers.
 
-The authors and copyright holders of this software assume no responsibility  
+The authors and copyright holders of this software assume **no responsibility**  
 for excessive data usage, violations of third‑party terms, service abuse,  
 associated costs, or any legal consequences resulting from how the user  
 chooses to operate this software.
 
 ---
 
+## Security
+
+This version of the STAC Downloader includes **important security improvements** to protect user credentials:
+
+### ✔ HTTPS Enforcement  
+The application now **requires all STAC URLs to use HTTPS**.  
+Plain HTTP is rejected to prevent credentials from being transmitted in clear text.
+
+### ✔ Trusted Domain Validation  
+To prevent credential theft, the tool only allows STAC URLs hosted on  
+**approved Lantmäteriet domains**, such as:
+
+https://api.lantmateriet.se
+
+If a user pastes a URL pointing to an unknown or untrusted host, the tool will  
+block the request and display a warning.
+
+### ✔ Credentials Stored Only in Memory  
+- Email and password are **never written to disk**  
+- Credentials are used only for authenticated tile downloads  
+- No credential information is logged  
+
+### ✔ Clear User Warnings  
+The application now provides explicit warnings when:  
+- A STAC URL is insecure  
+- A STAC URL points to an untrusted host  
+- A user attempts to proceed without a valid BBOX or preview  
+
+These changes ensure that users do not accidentally send their Lantmäteriet  
+credentials to malicious or incorrect endpoints.
+
+---
+
 ## Overview
 
-GeoNuxLabs STAC Downloader is a modern, map‑driven desktop application for efficiently exploring and downloading geospatial datasets from **Lantmäteriet’s STAC services**.
+GeoNuxLabs STAC Downloader is a modern, map‑driven desktop application for  
+efficiently exploring and downloading geospatial datasets from  
+**Lantmäteriet’s STAC services**.
 
 The application allows you to:
 
-- Paste any STAC search URL  
+- Paste a STAC search URL  
 - Draw a **BBOX** interactively on a map  
 - Preview all matching STAC items  
-- Download datasets using a robust multi‑threaded engine  
+- Download datasets using a robust authenticated engine  
 - Track progress in real time  
 - Save data to any local directory  
 
-Built with **Python**, **PySide6**, **Leaflet**, and a modular STAC client designed for reliability and performance.
+Built with **Python**, **PySide6**, **Leaflet**, and a modular STAC client  
+designed for reliability and performance.
 
 ---
 
 ## Features
 
-### ✔ STAC-Compatible Search  
-- Paste any `/stac-*/v1/search` URL  
-- Automatic validation  
+### ✔ STAC‑Compatible Search  
+- Paste any valid Lantmäteriet `/stac-*/v1/search` URL  
+- Automatic HTTPS + domain validation  
 - Visual feedback on number of matching items  
 
 ### ✔ Interactive BBOX Selection  
@@ -59,18 +99,19 @@ Built with **Python**, **PySide6**, **Leaflet**, and a modular STAC client desig
 - Real‑time status updates  
 
 ### ✔ Tile Preview  
-- List all matching STAC items before downloading 
-- Avoid unnecessary downloads  
+- See how many tiles match your BBOX  
+- Prevent accidental large downloads 
 
 ### ✔ Robust Download Engine  
-- Multi‑threaded downloads  
-- Automatic retry logic  
+- Authenticated downloads using HTTP Basic Auth  
+- Streamed file writing for large datasets  
 - Real‑time progress bar  
-- Logging of all events  
+- Automatic logging (without credentials)  
 
-### ✔ Clean and User-Friendly UI  
+### ✔ Clean and User‑Friendly UI  
 - Modern PySide6 interface  
-- Clear status messages   
+- Clear status messages  
+- Helpful warnings and guidance  
 
 ---
 

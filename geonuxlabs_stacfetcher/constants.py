@@ -5,5 +5,5 @@ DEFAULT_DOWNLOAD_DIR = os.path.join(
     "lantmateriet_downloads",
 )
 
-MAX_TILES = 1000
+MAX_TILES = 100
 LOG_FILE = "lm_download_log.txt"
